@@ -33,6 +33,8 @@ from omnisafe.common.logger import Logger
 from omnisafe.models.actor_critic.constraint_actor_critic import ConstraintActorCritic
 from omnisafe.utils import distributed
 
+import gc
+
 
 @registry.register
 # pylint: disable-next=too-many-instance-attributes,too-few-public-methods,line-too-long
@@ -263,14 +265,14 @@ class PolicyGradient(BaseAlgo):
                 logger=self._logger,
             )
             self._logger.store({'Time/Rollout': time.time() - rollout_time})
-            print(111111111111)
+            # print(111111111111)
             update_time = time.time()
             self._update()
             self._logger.store({'Time/Update': time.time() - update_time})
-
+            # print(233333)
             if self._cfgs.model_cfgs.exploration_noise_anneal:
                 self._actor_critic.annealing(epoch)
-
+            # print(22222222)
             if self._cfgs.model_cfgs.actor.lr is not None:
                 self._actor_critic.actor_scheduler.step()
 
@@ -288,7 +290,7 @@ class PolicyGradient(BaseAlgo):
                     ),
                 },
             )
-            print("hh")
+            # print("hh")
             self._logger.dump_tabular()
 
             # save model to disk
@@ -355,7 +357,7 @@ class PolicyGradient(BaseAlgo):
 
         original_obs = obs
         old_distribution = self._actor_critic.actor(obs)
-
+        print("old distribution built.")
         dataloader = DataLoader(
             dataset=TensorDataset(obs, act, logp, target_value_r, target_value_c, adv_r, adv_c),
             batch_size=self._cfgs.algo_cfgs.batch_size,
@@ -366,6 +368,7 @@ class PolicyGradient(BaseAlgo):
         final_kl = 0.0
 
         for i in track(range(self._cfgs.algo_cfgs.update_iters), description='Updating...'):
+            cc=0
             for (
                 obs,
                 act,
@@ -375,10 +378,17 @@ class PolicyGradient(BaseAlgo):
                 adv_r,
                 adv_c,
             ) in dataloader:
+                cc+=1
+                # print(f"update iter: {cc}")
+                # print(f"obs shape: {obs.shape}")
                 self._update_reward_critic(obs, target_value_r)
                 if self._cfgs.algo_cfgs.use_cost:
                     self._update_cost_critic(obs, target_value_c)
                 self._update_actor(obs, act, logp, adv_r, adv_c)
+
+            # print(f"iter {i}/{self._cfgs.algo_cfgs.update_iters} finished\n")
+            gc.collect()
+            torch.cuda.empty_cache()
 
             new_distribution = self._actor_critic.actor(original_obs)
 

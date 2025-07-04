@@ -438,7 +438,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                                 -1,
                                 obs.shape[-1],  # to make sure the shape is (1, obs_dim)
                             ),
-                            deterministic=True,
+                            deterministic=False,
                         ).reshape(
                             -1,  # to make sure the shape is (act_dim,)
                         )
@@ -453,6 +453,9 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                             'The policy must be provided or created before evaluating the agent.',
                         )
                 obs, rew, cost, terminated, truncated, _ = self._env.step(act)
+                # self._env.render()
+                # print(act)
+                # input("sukiet interrupt > ")
                 if 'Saute' in self._cfgs['algo'] or 'Simmer' in self._cfgs['algo']:
                     self._safety_obs -= cost.unsqueeze(-1) / self._safety_budget
                     self._safety_obs /= self._cfgs.algo_cfgs.saute_gamma
@@ -566,7 +569,7 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
                                 -1,
                                 obs.shape[-1],  # to make sure the shape is (1, obs_dim)
                             ),
-                            deterministic=True,
+                            deterministic=False,
                         ).reshape(
                             -1,  # to make sure the shape is (act_dim,)
                         )
@@ -600,30 +603,30 @@ class Evaluator:  # pylint: disable=too-many-instance-attributes
 
             if self._render_mode == 'rgb_array_list':
                 frames = self._env.render()
-            if save_replay_path is not None:
-                save_video(
-                    frames,
-                    save_replay_path,
-                    fps=self.fps,
-                    episode_trigger=lambda x: True,
-                    video_length=horizon,
-                    episode_index=episode_idx,
-                    name_prefix='eval',
-                )
+            # if save_replay_path is not None:
+            #     save_video(
+            #         frames,
+            #         save_replay_path,
+            #         fps=self.fps,
+            #         episode_trigger=lambda x: True,
+            #         video_length=horizon,
+            #         episode_index=episode_idx,
+            #         name_prefix='eval',
+            #     )
             self._env.reset()
             frames = []
             episode_rewards.append(ep_ret)
             episode_costs.append(ep_cost)
             episode_lengths.append(length)
-            with open(result_path, 'a+', encoding='utf-8') as f:
-                print(f'Episode {episode_idx} results:', file=f)
-                print(f'Episode reward: {ep_ret}', file=f)
-                print(f'Episode cost: {ep_cost}', file=f)
-                print(f'Episode length: {length}', file=f)
-        with open(result_path, 'a+', encoding='utf-8') as f:
-            print(self._dividing_line)
-            print('Evaluation results:', file=f)
-            print(f'Average episode reward: {np.mean(episode_rewards)}', file=f)
-            print(f'Average episode cost: {np.mean(episode_costs)}', file=f)
-            print(f'Average episode length: {np.mean(episode_lengths)}', file=f)
+            # with open(result_path, 'a+', encoding='utf-8') as f:
+            #     print(f'Episode {episode_idx} results:', file=f)
+            #     print(f'Episode reward: {ep_ret}', file=f)
+            #     print(f'Episode cost: {ep_cost}', file=f)
+            #     print(f'Episode length: {length}', file=f)
+        # with open(result_path, 'a+', encoding='utf-8') as f:
+        #     print(self._dividing_line)
+        #     print('Evaluation results:', file=f)
+        #     print(f'Average episode reward: {np.mean(episode_rewards)}', file=f)
+        #     print(f'Average episode cost: {np.mean(episode_costs)}', file=f)
+        #     print(f'Average episode length: {np.mean(episode_lengths)}', file=f)
         self._env.close()

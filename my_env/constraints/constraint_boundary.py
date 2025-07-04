@@ -2,31 +2,32 @@
 import torch
 import my_env
 import my_env.curves as crv
-from my_env.curves import show_curve
+import utils
 
-from my_env.device_provider import DeviceProvider
+from config_provider import ConfigProvider, dprint
 
 
-def constraint_boundary(self: "my_env.layout_env.LayoutEnv", action) -> torch.Tensor:
+@utils.count_runtime(track=ConfigProvider.track_time)
+def constraint_boundary(env: "my_env.layout_env.LayoutEnv", action) -> torch.Tensor:
     """
     圆不能超出边界
-    todo 并且如果有必要的话 在临近边界的地方就给cost
-    :param self:
+    :param env:
     :param action:
     :return:
     """
 
-    xy = torch.tensor([action[0], action[1]], device=DeviceProvider.device).view(1, -1)
-    r = action[2]
-    arg = torch.tensor([[0,0],[1,1]], device=DeviceProvider.device)
-    distance = torch.abs(xy - arg) - r
-    distance_sum = distance[distance<0].sum()
+    margin = 0.02
 
-    return crv.crvDebug(
-        "空间到边界的距离",
-        crv.relu_reverse(2, 0.1),
-        distance_sum
-    )
+    xy = torch.tensor([action[0], action[1]], device=ConfigProvider.device).view(1, -1)
+    r = action[2]
+    arg = torch.tensor([[0,0],[1,1]], device=ConfigProvider.device)
+    distance = torch.abs(xy - arg) - (r + margin)
+    distance_min = distance.min()
+
+    result = crv.crv_boundary(distance_min, r, margin)
+
+    dprint(f"空间到边界 {distance_min:.2f} 映射到 {result:.2f}")
+    return result
 
 
 def __test():
@@ -45,7 +46,4 @@ def __test():
 
 if __name__ == '__main__':
 
-    show_curve(
-        crv.relu_reverse(-0.02, 0.02, 100, 100),
-        -1, 1
-    )
+    pass

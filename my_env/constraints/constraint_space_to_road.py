@@ -5,32 +5,36 @@ import random
 import numpy as np
 
 import my_env
-import my_env.curves as crvs
+import my_env.curves as crv
+from config_provider import ConfigProvider, dprint
 
 from my_env.my_functions.circle_edge_to_road_distance import circle_edge_to_road_distance
+from my_env.my_functions.circle_to_circle_edge_distance import circle_to_circle_edge_distance
 
 
-@utils.count_runtime
-def constraint_space_to_road(self: "my_env.layout_env.LayoutEnv", action) -> torch.Tensor:
+@utils.count_runtime(track=ConfigProvider.track_time)
+def constraint_space_to_road(env: "my_env.layout_env.LayoutEnv", action: torch.Tensor) -> torch.Tensor:
 
-    px = action[0]
-    py = action[1]
-    r = action[2]
+    edge_distance_to_road = env.current_to_road_min_distance
 
-    ax = self.road_slices[0]
-    ay = self.road_slices[1]
-    bx = self.road_slices[2]
-    by = self.road_slices[3]
-
-    edge_distance_to_road = circle_edge_to_road_distance(px, py, r, ax, ay, bx, by)
-
-    # todo 加上有广场的情况
-    return crvs.crvDebug(
-        "边界到道路的约束",
-        crvs.index_sweetZone(0.03, 0.04, 1e8, 10),
-        # crvs.quadratic_sweetZone(0.03, 0.04),
-        edge_distance_to_road
+    min_edge_distance_to_square = torch.min(
+        env.current_to_others_distances[(env.spaces[:, 0] == 0)[:env.step_index]]
     )
+
+    dprint(f"edge_distance_to_square: {env.current_to_others_distances[(env.spaces[:, 0] == 0)[:env.step_index]]}")
+
+    # todo 要加上一种情况：如果无法和道路相接触呢？那就只有和其它建筑相接
+
+    if min_edge_distance_to_square <= edge_distance_to_road:
+        # 如果更临近广场 则免cost
+        result = crv.crv_space_edge_to_square_edge(min_edge_distance_to_square)
+        dprint(f"实体空间到广场 {min_edge_distance_to_square:.3f} 映射到 {result:.3f}")
+    else:
+        result = crv.crv_edge_to_road_plus(edge_distance_to_road)
+        dprint(f"实体空间到道路 {edge_distance_to_road:.3f} 映射到 {result:.3f}")
+
+
+    return result
 
 
 def __test(sample_times=10240):

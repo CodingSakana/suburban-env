@@ -26,6 +26,7 @@ from omnisafe.utils.model import build_mlp_network
 
 import omnisafe
 
+from config_provider import dprint
 
 # pylint: disable-next=too-many-instance-attributes
 class GaussianLearningActor(GaussianActor):
@@ -56,8 +57,8 @@ class GaussianLearningActor(GaussianActor):
         """Initialize an instance of :class:`GaussianLearningActor`."""
         super().__init__(obs_space, act_space, hidden_sizes, activation, weight_initialization_mode)
 
-        preprocessor = omnisafe.Extractor.factory_state_preprocessor(obs_space)
-        self._obs_dim = omnisafe.Extractor.obs_dim
+        preprocessor = omnisafe.PolicyProvider.factory_state_preprocessor(obs_space)
+        self._obs_dim = omnisafe.PolicyProvider.obs_dim
 
         self.mean: nn.Module = nn.Sequential(
             preprocessor,
@@ -105,7 +106,9 @@ class GaussianLearningActor(GaussianActor):
         self._after_inference = True
         if deterministic:
             return self._current_dist.mean
-        return self._current_dist.rsample()
+        test = self._current_dist.rsample()
+        dprint("GaussianActor: ", test)
+        return test
 
     def forward(self, obs: torch.Tensor) -> Distribution:
         """Forward method.

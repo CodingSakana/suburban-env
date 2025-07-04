@@ -1,8 +1,9 @@
 import utils
 import my_env.curves as crv
+from config_provider import ConfigProvider
 
 
-@utils.count_runtime(threshold=1e4)
+@utils.count_runtime(track=ConfigProvider.track_time, threshold=1e4)
 def index_sweetZone(floor:float, ceil:float, l_base=2, r_base=10):
     """
     指数函数 有一定的甜区
@@ -12,6 +13,7 @@ def index_sweetZone(floor:float, ceil:float, l_base=2, r_base=10):
     :param r_base: 右侧指数函数的底数
     :return: 一个闭包
     """
+    # todo 指数改成其它的方式，改成 torch.pow torch.exp
     def crv(x:float):
         if x < floor:
             return l_base**(-x+floor) -1

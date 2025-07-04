@@ -1,0 +1,187 @@
+Index: my_env/layout_env.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from __future__ import annotations\r\n\r\n\r\nimport cv2\r\nimport time\r\nimport matplotlib.pyplot as plt\r\nimport random\r\nfrom typing import Type, Any, List, Dict\r\n\r\n# 自己维护的依赖\r\nimport utils\r\nfrom my_env import road_generator\r\nfrom my_env.my_functions.circle_edge_to_road_distance import circle_edge_to_road_distance\r\nfrom my_env.my_functions.circle_to_circle_edge_distance import circle_to_circle_edge_distance\r\nfrom my_env.space import *\r\nfrom my_env import constraints, rewards\r\nfrom config_provider import ConfigProvider, dprint\r\n\r\n\r\nclass LayoutEnv:\r\n    \"\"\"\r\n    这是核心的布局模型类\r\n    \"\"\"\r\n\r\n    # 道路颜色\r\n    road_color: Tuple[int, int, int] = (0, 0, 0)\r\n\r\n    @utils.count_runtime\r\n    def __init__(\r\n        self,\r\n        size: int = 128,\r\n        actual_size=100,\r\n    ):\r\n\r\n        self.image_size = size # 地图的宽高 默认为正方形\r\n        self.actual_size = actual_size # image_size所代表的现实中的长度 单位米\r\n\r\n        # 设置路的粗细\r\n        self.road_thickness: int = size // 64\r\n        if self.road_thickness == 0:\r\n            self.road_thickness = 1\r\n\r\n        # 生成道路\r\n        self.road = road_generator.generate()\r\n        temp_slices = road_generator.road_to_roadSlice(self.road)\r\n        self.road_slices = torch.tensor(temp_slices, device=ConfigProvider.device).transpose(0, 1)\r\n        self.road_param = road_generator.build_road_parameters(temp_slices)\r\n\r\n        # 绘制道路到一个初始化图像\r\n        self.initial_img: np.ndarray = np.ones((self.image_size, self.image_size, 3), dtype=np.uint8) * 255\r\n        self.draw_roads_to_img(self.road, self.initial_img)\r\n\r\n        # 设置空间顺序 todo 可以加上这个特征\r\n        types = [Square, Restaurant, Store, Restroom, Hotel]\r\n        self.space_numbers = [3, 6, 15, 2, 4]\r\n        self.step_sum = sum(self.space_numbers)\r\n        self.max_step = self.step_sum - 1\r\n\r\n        self.space_types: List[Space] = []\r\n\r\n        for index, num in enumerate(self.space_numbers):\r\n            self.space_types += [\r\n                types[index] for _ in range(num)\r\n            ]\r\n\r\n        # 初始化: 图像、模型中的空间列表、目前布置的步数\r\n        self.spaces: torch.Tensor = torch.tensor([])  # 布置了的空间将会存储在这里\r\n        self.image: np.ndarray = np.array([])  # 栅格化成(size,size)大小的地图图像\r\n        self.step_index: int = 0  # 当前智能体决策时间步\r\n        self.action_history: List[torch.Tensor] = [] # 动作历史\r\n\r\n        # step中会用到的public api\r\n        self.current_to_others_distances: torch.Tensor = torch.tensor([])\r\n        self.current_to_road_min_distance: torch.Tensor = torch.tensor([])\r\n        self.space_param = torch.tensor([]) # (step_sum, 3), 每个代表(road_slice_index, t投影量, d距离)\r\n\r\n        self.reset()  # 重置 已布置空间、观测图像、时间步\r\n\r\n\r\n    def draw_roads_to_img(self, roads, image: np.ndarray):\r\n        \"\"\"\r\n        将归一化坐标转换为像素坐标 并按照cv2的要求reshape\r\n        这段代码只会在实例化的时候调用 性能影响不大\r\n        \"\"\"\r\n        def rebuild(points):\r\n            for point in points:\r\n                for i in range(2):\r\n                    point[i] = int(point[i] * image.shape[0])\r\n\r\n            return points.reshape((-1, 1, 2)).astype(np.int32)\r\n\r\n        polylines = []\r\n        for road in roads:\r\n            polylines.append(\r\n                rebuild(\r\n                    np.array(road, np.float32)\r\n                )\r\n            )\r\n\r\n        cv2.polylines(image, polylines, isClosed=False, color=self.road_color, thickness=self.road_thickness)\r\n\r\n    @utils.count_runtime(track=ConfigProvider.track_time)\r\n    def get_obs(self):\r\n        \"\"\"返回当前的 observation\"\"\"\r\n        image_flatten = torch.tensor(self.image, device=ConfigProvider.device).flatten()\r\n        image_normalized = image_flatten / 255.0 # 0-255 映射到 0-1\r\n        obs =  torch.cat((\r\n            image_normalized, torch.tensor([self.step_index], device=ConfigProvider.device),\r\n        )).to(torch.float32)\r\n\r\n        return obs\r\n\r\n    def reset(self):\r\n        \"\"\"重置图像为白色背景\"\"\"\r\n        self.image = self.initial_img.copy()\r\n        # self.spaces = torch.tensor([[0, 0, 0, 0] for _ in range(30)], device=ConfigProvider.device)\r\n        self.spaces = torch.zeros([self.step_sum, 4], device=ConfigProvider.device)\r\n        self.space_param = torch.zeros([self.step_sum, 3], device=ConfigProvider.device)\r\n        self.step_index = 0\r\n        self.action_history = []\r\n        return self.get_obs()\r\n\r\n    @utils.count_runtime(track=ConfigProvider.track_time)\r\n    def show_plot(self, image: np.ndarray=None):\r\n        \"\"\"使用plt渲染当前的图像\"\"\"\r\n        if image is None: image = self.image\r\n        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)\r\n        # plt.imshow(image_rgb)\r\n        plt.imshow(image_rgb, extent=(0, 1, 1, 0))\r\n        plt.gca().xaxis.set_ticks_position('top')\r\n        plt.show()\r\n\r\n    @utils.count_runtime(track=ConfigProvider.track_time, threshold=2e5)\r\n    def lay_space(self, space_type, x, y, radius) -> torch.Tensor:\r\n        \"\"\"存入 self.spaces 并绘制在image上\"\"\"\r\n        # 构造空间 存入\r\n        new_space = space_type(x, y, radius)\r\n        self.spaces[self.step_index] = new_space.space\r\n\r\n        # 将归一化的尺寸转换为图像像素尺寸\r\n        new_x = int(x * self.image_size)\r\n        new_y = int(y * self.image_size)\r\n        new_radius = int(new_space.radius * self.image_size)\r\n\r\n        cv2.circle(self.image, (new_x, new_y), new_radius, new_space.color, -1)\r\n\r\n        return new_space.action\r\n\r\n\r\n    def get_high_resolution_image(self, size) -> np.ndarray:\r\n        \"\"\"用于debug、evaluate的高清晰度图片\"\"\"\r\n        image: np.ndarray = np.ones((size, size, 3), dtype=np.uint8) * 255\r\n        self.draw_roads_to_img(self.road, image)\r\n        valid_spaces: torch.Tensor = self.spaces[:self.step_index, :]\r\n\r\n        for virtual_step, space in enumerate(valid_spaces):\r\n            x = space[1]\r\n            y = space[2]\r\n            radius = space[3]\r\n\r\n            new_x = int(x * size)\r\n            new_y = int(y * size)\r\n            new_radius = int(radius * size)\r\n\r\n            type_to_lay = self.lay_type(virtual_step)\r\n\r\n            cv2.circle(image, (new_x, new_y), new_radius, type_to_lay.color, -1)\r\n\r\n        return image\r\n\r\n\r\n\r\n    def nl2il(self, action:torch.tensor) -> torch.tensor:\r\n        \"\"\"\r\n        normalized length to image length\r\n        归一化的尺寸 映射回 图像像素尺寸\r\n        \"\"\"\r\n        return (action * self.image_size).to(torch.int32).tolist()\r\n\r\n    @utils.count_runtime(track=ConfigProvider.track_time)\r\n    def step(\r\n        self,\r\n        action: torch.Tensor,\r\n    ) -> Tuple[\r\n        torch.Tensor,\r\n        torch.Tensor,\r\n        torch.Tensor,\r\n        torch.Tensor,\r\n        torch.Tensor,\r\n        Dict[str, Any],\r\n    ]:\r\n        \"\"\"\r\n        Public API for CMDP\r\n        :param action: [x, y, radius]\r\n        :return:\r\n            observation: [tensor(size, size, 3)]\r\n            reward: The amount of reward returned after previous action.\r\n            cost: The amount of cost returned after previous action.\r\n            terminated: Whether the episode has ended.\r\n            truncated: Whether the episode has been truncated due to a time limit.\r\n            info: Some information logged by the environment.\r\n        \"\"\"\r\n\r\n        dprint(\"layout received: \", action)\r\n        self.action_history.append(action)\r\n\r\n        assert action.shape == (3,), \"Action shape is not (3).\"\r\n        assert self.step_index < self.step_sum, \"invalid time_step\"\r\n\r\n        truncated = torch.tensor([0], device=ConfigProvider.device)\r\n        info = {'time_step': self.step_index}\r\n\r\n        type_to_lay = self.lay_type(self.step_index)\r\n        assert type_to_lay is not None, \"The env is already terminated.\"\r\n\r\n        px = action[0]\r\n        py = action[1]\r\n        r = action[2]\r\n\r\n        remapped_action = self.lay_space(type_to_lay, px, py, r)\r\n        dprint(\"my remapped action: \", remapped_action)\r\n        dprint()\r\n\r\n\r\n        # 提前计算一个 distance 然后共享给 reward 和 cost\r\n        # self.current_to_road_min_distance = circle_edge_to_road_distance(\r\n        #     remapped_action[0],\r\n        #     remapped_action[1],\r\n        #     remapped_action[2],\r\n        #     self.road_slices[0],\r\n        #     self.road_slices[1],\r\n        #     self.road_slices[2],\r\n        #     self.road_slices[3],\r\n        # )\r\n        index, t, d = road_generator.built_point_param(remapped_action, self.road_slices)\r\n        self.current_to_road_min_distance = (d - remapped_action[2])[0]\r\n        self.space_param[self.step_index] = torch.tensor([index, t, d], device=ConfigProvider.device)\r\n        self.current_to_others_distances = circle_to_circle_edge_distance(\r\n            remapped_action,\r\n            self.spaces[:self.step_index, 1:]\r\n        )\r\n\r\n\r\n        cost = constraints.cost_weighting(self, remapped_action)\r\n        reward = rewards.reward_weighting(self, remapped_action)\r\n\r\n        # get observation\r\n        obs = self.get_obs()\r\n\r\n        # determine if terminated 并且更改step_index\r\n        if self.step_index == self.step_sum - 1:\r\n            terminated = torch.tensor(True, device=ConfigProvider.device)\r\n            self.step_index = self.step_sum\r\n            info['reset'] = True\r\n        else:\r\n            self.step_index += 1\r\n            terminated = torch.tensor(False, device=ConfigProvider.device)\r\n\r\n\r\n        return obs, reward, cost, terminated, truncated, info\r\n\r\n\r\n    # @staticmethod\r\n    def lay_type(self, step_index:int) -> (Type, torch.tensor):\r\n        \"\"\"\r\n        获取当前步骤要摆放啥类型的空间\r\n        :param step_index: 步骤的索引 第几步\r\n        :return: 这一步所要布置的空间； 结束标志 terminated\r\n        \"\"\"\r\n        assert step_index < self.step_sum, f\"step_index={step_index} 超出了最大步数\"\r\n        return self.space_types[step_index]\r\n\r\n\r\n\r\n    @staticmethod\r\n    def get_random_action(limitation=0.2):\r\n        \"\"\"\r\n        获取一个随机的action 用于测试\r\n        limitation: 随机决策中 radius大小的限制\r\n        \"\"\"\r\n        return torch.tensor([random.random() for _ in range(2)] + [random.random()*limitation])\r\n\r\n\r\n    def draw_reference_action(self, action, reference_color = (134, 255, 102), fix_radius=None):\r\n        \"\"\"画一个参考点 纯测试使用 训练的时候千万别用\"\"\"\r\n        action = self.nl2il(action)\r\n        x, y, r = action\r\n        cv2.circle(self.image, (x, y), 3, reference_color, -1)\r\n        cv2.circle(self.image, (x, y), r, reference_color, 1) # rgb(102, 255, 134)\r\n\r\n\r\n\r\ndef round_test(\r\n    env: LayoutEnv,\r\n    interrupt: bool = False,\r\n    show_plot: bool = False,\r\n    show_plot_after_round: bool = False,\r\n):\r\n    \"\"\"\r\n    一个只用于debug的测试函数\r\n    Args:\r\n        env: 传进布局环境实例\r\n        interrupt: 每一个step是否打断？\r\n        show_plot: 每一个step是否展示布局？\r\n        show_plot_after_round: 每一回合完成后展示布局？\r\n    Returns: null 啥也不返回\r\n    \"\"\"\r\n    start = time.perf_counter_ns()\r\n    # for _ in range(steps):\r\n    while True:\r\n        action = torch.tensor([random.random() for _ in range(3)], device=ConfigProvider.device)\r\n\r\n        space_type = env.lay_type(env.step_index)\r\n\r\n        # sample_action = action.clone()\r\n        # sample_action[2] =  space_type.linear_radius(sample_action[2])\r\n        # print(space_type)\r\n        # layoutEnv.draw_reference_action(sample_action)\r\n        # layoutEnv.show_plot()\r\n\r\n        dprint(f\"\\nstep {env.step_index}:{space_type.__name__}, action: {action}\")\r\n\r\n        result = env.step(action)\r\n\r\n        if show_plot:\r\n            env.show_plot()\r\n            env.show_plot(image=env.get_high_resolution_image(256))\r\n\r\n        # dprint(f\"R: {result[1]:.2f}, C: {result[2]:.2f}\")\r\n\r\n        if result[3].item():\r\n            break\r\n\r\n        if interrupt: input(\"continue > \")\r\n\r\n    if show_plot_after_round: env.show_plot()\r\n    env.reset()\r\n\r\n    print(f\"Round over in {time.perf_counter_ns() - start:,} ns.\")\r\n\r\nif __name__ == '__main__':\r\n\r\n    layoutEnv = LayoutEnv(size=32)\r\n\r\n    for _ in range(6):\r\n        round_test(\r\n            layoutEnv,\r\n            interrupt=True,\r\n            show_plot=True,\r\n            show_plot_after_round=False,\r\n        )\r\n\r\n\r\n\r\n\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/my_env/layout_env.py b/my_env/layout_env.py
+--- a/my_env/layout_env.py	(revision 619c155531bf6e9478963ba841e94338b57bc30d)
++++ b/my_env/layout_env.py	(date 1744532896142)
+@@ -345,8 +345,8 @@
+     for _ in range(6):
+         round_test(
+             layoutEnv,
+-            interrupt=True,
+-            show_plot=True,
++            interrupt=False,
++            show_plot=False,
+             show_plot_after_round=False,
+         )
+ 
+Index: my_env/curves/segmented.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>\r\nimport torch\r\nimport utils\r\n\r\nfrom config_provider import ConfigProvider\r\nfrom utils.crv_tester import show_curve\r\n\r\n\r\n@utils.count_runtime(track=ConfigProvider.track_time)\r\ndef crv_edge_to_road(x: torch.Tensor) -> torch.Tensor:\r\n    \"\"\" 用来测试的 \"\"\"\r\n    l1 = 0.03\r\n    l2 = 0.08\r\n    l3 = 0.58\r\n\r\n    y = torch.where(x < l1, 1, x)\r\n    y = torch.where((l1 <= x) & (x < l2), 0, y)\r\n    y = torch.where((l2 <= x) & (x < l3), 2 * x - 0.16, y)\r\n    y = torch.where(l3 <= x, 1, y)\r\n    return y\r\n\r\n@utils.count_runtime(track=ConfigProvider.track_time)\r\ndef crv_edge_to_road_plus(x: torch.Tensor) -> torch.Tensor:\r\n    \"\"\"\r\n    空间边界到道路距离的曲线\r\n    https://www.desmos.com/calculator/cqvebl2r1f\r\n    Args:\r\n        x: 边界到道路距离\r\n    Returns: ...\r\n    \"\"\"\r\n    l1 = 0.01\r\n    l2 = 0.02\r\n    d = 0.06\r\n    l3 = l2 + d\r\n\r\n    y = torch.where(x < l1, 1, x)\r\n    y = torch.where((l1 <= x) & (x < l2), 0, y)\r\n    y = torch.where((l2 <= x) & (x < l3), (1/d) * (x - l2), y)\r\n    y = torch.where(l3 <= x, 1, y)\r\n    return y\r\n\r\ndef crv_space_edge_to_square_edge(x: torch.Tensor) -> torch.Tensor:\r\n    \"\"\"\r\n    实体空间边界到广场\r\n    Args:\r\n        x: 边界到道路距离\r\n    Returns: ...\r\n    \"\"\"\r\n    l2 = 0.02\r\n    d = 0.06\r\n    l3 = l2 + d\r\n\r\n    y = torch.where(x < l2, 0, x)\r\n    y = torch.where((l2 <= x) & (x < l3), (1/d) * (x - l2), y)\r\n    y = torch.where(l3 <= x, 1, y)\r\n    return y\r\n\r\n@utils.count_runtime(track=ConfigProvider.track_time)\r\ndef crv_overlap(x:torch.Tensor, d1:float, d2:float) -> torch.Tensor:\r\n    \"\"\"\r\n    重叠部分曲线\r\n    https://www.desmos.com/calculator/1lciprp2rj\r\n    Args:\r\n        x: 空间边界间的距离\r\n        d1: 倾斜部分在x轴上的长度\r\n        d2: 容许空间之间有多少距离的重叠\r\n    Returns:重叠的cost\r\n    \"\"\"\r\n    if d1 == 0:\r\n        d1 = 1e4\r\n    l1 = 0 - d1 - d2\r\n    l2 = l1 + d1\r\n    k = 1 / (l1 - l2)\r\n    b = 1 - k * l1\r\n\r\n    y = torch.where(x < l1, 1, x)\r\n    y = torch.where((l1 <= x) & (x < l2), k * x + b, y)\r\n    y = torch.where(l2 <= x, 0, y)\r\n\r\n    return y\r\n\r\n@utils.count_runtime(track=ConfigProvider.track_time)\r\ndef crv_relationship(x: torch.Tensor, p:torch.Tensor, d1:float, d2:float) -> torch.Tensor:\r\n    \"\"\"\r\n    空间关系曲线\r\n    https://www.desmos.com/calculator/fnrw9t82eu\r\n    Args:\r\n        x: 当前布置的空间与其它既有空间的距离（边界距离）\r\n        p: 当前的吸引/排斥系数\r\n        d1: 如下图\r\n        d2: 如下图\r\n         |.............@@@@@@@\r\n         |..........@@\r\n         |.......@@\r\n         |@@@@@@\r\n         |--d1--|--d2--|\r\n    Returns: ...\r\n    \"\"\"\r\n    l1 = d1\r\n    l2 = d1 + d2\r\n    k = 1 / d2\r\n    b = -d1 * k - 0.5\r\n\r\n    y = torch.where(x < l1, -0.5, x)\r\n    y = torch.where((l1 <= x) & (x < l2), k * x + b, y)\r\n    y = torch.where(l2 <= x, 0.5, y)\r\n    return p * y + torch.abs(p / 2)\r\n\r\n@utils.count_runtime(track=ConfigProvider.track_time)\r\ndef crv_relationship_mini(x: torch.Tensor, p:torch.Tensor) -> torch.Tensor:\r\n    \"\"\" 用来测试的 性能不行 \"\"\"\r\n    y = torch.where(x<0.2, -1, x)\r\n    y = torch.where((0.2<=x)&(x<0.6), 5*x-2, y)\r\n    y = torch.where(0.6 <= x, 1, y)\r\n    return 0.5*p*y + torch.abs(p/2)\r\n\r\n\r\n@utils.count_runtime(track=ConfigProvider.track_time)\r\ndef crv_boundary(x: torch.Tensor, r:float, m: float) -> torch.Tensor:\r\n    \"\"\"\r\n    带有margin的 圆到边界的距离\r\n    https://www.desmos.com/calculator/3nrrqqhziu\r\n    Args:\r\n        x:\r\n        r: radius\r\n        m: margin\r\n    Returns:\r\n    \"\"\"\r\n    l1 = -m - r + 0.02\r\n    l2 = 0\r\n    k = 1 / l1 - l2\r\n\r\n    y = torch.where(x < l1, 1, x)\r\n    y = torch.where((l1 <= x) & (x < l2), k*x, y)\r\n    y = torch.where(l2 <= x, 0, y)\r\n    return y\r\n\r\n\r\ndef __test_edge_to_road():\r\n    from utils.running_time_tester import RunningTimeTester\r\n\r\n    def wrapper(func):\r\n        x = torch.linspace(0, 1, 10)\r\n        func(x)\r\n\r\n    RunningTimeTester(\r\n        test_functions=[crv_edge_to_road, crv_edge_to_road_plus],\r\n        test_wrapper=wrapper,\r\n        times=10000\r\n    ).test()\r\n\r\n\r\ndef __test_relationship():\r\n    from utils.running_time_tester import RunningTimeTester\r\n\r\n    def wrapper(func):\r\n        x = torch.tensor([0.15, 0.35, 0.55, 0.75])\r\n        p = torch.tensor([-0.3, 0.2, 0.5, -0.7])\r\n        func(x, p)\r\n\r\n    RunningTimeTester(\r\n        test_functions=[crv_relationship, crv_relationship_mini],\r\n        test_wrapper=wrapper,\r\n        times=1000\r\n    ).test()\r\n\r\n\r\ndef __show_crv_overlap():\r\n    def wrapper(x:torch.Tensor) -> torch.Tensor:\r\n        return crv_overlap(x, 0.5, 0.25)\r\n\r\n    show_curve(\r\n        wrapper,\r\n        -1, 1, 100\r\n    )\r\n\r\n\r\ndef __show_crv_relationship():\r\n    def wrapper(x: torch.Tensor) -> torch.Tensor:\r\n        return crv_relationship(x, torch.ones_like(x) * 1, 0.2, 0.25)\r\n\r\n    show_curve(\r\n        wrapper,\r\n        0, 1, 100\r\n    )\r\n\r\n\r\ndef __show_crv_boundary():\r\n    def wrapper(x:torch.Tensor) -> torch.Tensor:\r\n        return crv_boundary(x, 0.15, 0.05)\r\n\r\n    show_curve(\r\n        wrapper,\r\n        -0.5, 0.5, 100\r\n    )\r\n\r\n\r\ndef __show_crv_edge_to_road_plus():\r\n    def wrapper(x:torch.Tensor) -> torch.Tensor:\r\n        return crv_edge_to_road_plus(x)\r\n\r\n    show_curve(\r\n        wrapper,\r\n        0, 1, 100\r\n    )\r\n\r\n\r\nif __name__ == '__main__':\r\n\r\n    def wrapper(x):\r\n        return crv_space_edge_to_square_edge(x)\r\n\r\n    show_curve(\r\n        wrapper,\r\n        -1, 1, 100\r\n    )\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/my_env/curves/segmented.py b/my_env/curves/segmented.py
+--- a/my_env/curves/segmented.py	(revision 619c155531bf6e9478963ba841e94338b57bc30d)
++++ b/my_env/curves/segmented.py	(date 1744532896162)
+@@ -101,10 +101,10 @@
+     k = 1 / d2
+     b = -d1 * k - 0.5
+ 
+-    y = torch.where(x < l1, -0.5, x)
++    y = torch.where(x < l1, -0.4, x)
+     y = torch.where((l1 <= x) & (x < l2), k * x + b, y)
+-    y = torch.where(l2 <= x, 0.5, y)
+-    return p * y + torch.abs(p / 2)
++    y = torch.where(l2 <= x, 0.4, y)
++    return p * y + torch.abs(p / 2.5)
+ 
+ @utils.count_runtime(track=ConfigProvider.track_time)
+ def crv_relationship_mini(x: torch.Tensor, p:torch.Tensor) -> torch.Tensor:
+Index: evaluate.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+># todo evaluate_model\r\n\r\n# import pdb\r\n#\r\n# def example_function():\r\n#     x = 10\r\n#     y = 20\r\n#     pdb.set_trace()\r\n#     z = x + y\r\n#     print(z)\r\n#\r\n# example_function()\r\n\r\n\r\n\"\"\"One example for evaluate saved policy.\"\"\"\r\n\r\nimport os\r\n\r\nfrom absl.logging import LOG_DIR\r\n\r\nimport omnisafe\r\nfrom config_provider import ConfigProvider\r\n\r\n\r\n# Just fill your experiment's log directory in here.\r\n# Such as: ~/omnisafe/examples/runs/PPOLag-{SafetyPointGoal1-v0}/seed-000-2023-03-07-20-25-48\r\n\r\nLOG_DIR = r'D:\\Desktop\\图灵学术对接\\学校集群\\seed-000-2025-04-12-21-35-09'\r\n\r\n\r\n# ConfigProvider.img_size = 32\r\nConfigProvider.img_size = 64\r\nConfigProvider.device = \"cpu\"\r\n\r\nif __name__ == '__main__':\r\n\r\n    from my_env import omnisafe_env\r\n\r\n    evaluator = omnisafe.Evaluator(render_mode='rgb_array')\r\n    dirs = os.listdir(os.path.join(LOG_DIR, 'torch_save'))\r\n    print(dirs)\r\n\r\n    for index, item in enumerate(dirs):\r\n        if index == 9:\r\n            print(\"kki\", item)\r\n            evaluator.load_saved(\r\n                save_dir=LOG_DIR,\r\n                model_name=item,\r\n                camera_name='track',\r\n                width=256,\r\n                height=256,\r\n            )\r\n            print(evaluator._env._env)\r\n            # evaluator.render(num_episodes=1)\r\n            evaluator.evaluate(num_episodes=1)\r\n    # scan_dir.close()
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/evaluate.py b/evaluate.py
+--- a/evaluate.py	(revision 619c155531bf6e9478963ba841e94338b57bc30d)
++++ b/evaluate.py	(date 1744533643573)
+@@ -16,20 +16,17 @@
+ 
+ import os
+ 
+-from absl.logging import LOG_DIR
+-
+ import omnisafe
+ from config_provider import ConfigProvider
+ 
+ 
+ # Just fill your experiment's log directory in here.
+ # Such as: ~/omnisafe/examples/runs/PPOLag-{SafetyPointGoal1-v0}/seed-000-2023-03-07-20-25-48
+-
+-LOG_DIR = r'D:\Desktop\图灵学术对接\学校集群\seed-000-2025-04-12-21-35-09'
+-
++LOG_DIR = r'C:\Users\ANASON\Desktop\seed-000-2025-04-11-01-59-53'
++# LOG_DIR = r'D:\Desktop\图灵学术对接\学校集群\seed-000-2025-04-07-21-43-13'
+ 
+ # ConfigProvider.img_size = 32
+-ConfigProvider.img_size = 64
++ConfigProvider.img_size = 84
+ ConfigProvider.device = "cpu"
+ 
+ if __name__ == '__main__':
+@@ -37,20 +34,17 @@
+     from my_env import omnisafe_env
+ 
+     evaluator = omnisafe.Evaluator(render_mode='rgb_array')
+-    dirs = os.listdir(os.path.join(LOG_DIR, 'torch_save'))
+-    print(dirs)
+-
+-    for index, item in enumerate(dirs):
+-        if index == 9:
+-            print("kki", item)
++    scan_dir = os.scandir(os.path.join(LOG_DIR, 'torch_save'))
++    for index, item in enumerate(scan_dir):
++        if index!=2:continue
++        if item.is_file() and item.name.split('.')[-1] == 'pt':
+             evaluator.load_saved(
+                 save_dir=LOG_DIR,
+-                model_name=item,
++                model_name=item.name,
+                 camera_name='track',
+                 width=256,
+                 height=256,
+             )
+-            print(evaluator._env._env)
+-            # evaluator.render(num_episodes=1)
++            evaluator.render(num_episodes=1)
+             evaluator.evaluate(num_episodes=1)
+-    # scan_dir.close()
+\ No newline at end of file
++    scan_dir.close()
+\ No newline at end of file
+Index: config_provider.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>from enum import Enum\r\n\r\nclass Device(Enum):\r\n    cpu = 'cpu'\r\n    cuda = 'cuda:0'\r\n\r\nclass ConfigProvider:\r\n    device = Device.cuda.value\r\n    track_time: bool = False\r\n    debug_print: bool = False\r\n\r\n    use_count_time: bool = False\r\n    use_curve_debug: bool = False\r\n    img_size: int = 64 # 训练时用的\r\n\r\n    @classmethod\r\n    def print_args(cls, prefix:str=\"\"):\r\n        print(f\"{prefix}device: {cls.device}\")\r\n        print(f\"{prefix}track_time: {cls.track_time}\")\r\n        print(f\"{prefix}debug_print: {cls.debug_print}\")\r\n        print(f\"{prefix}use_count_time: {cls.use_count_time}\")\r\n        print(f\"{prefix}use_curve_debug: {cls.use_curve_debug}\")\r\n        print(f\"{prefix}img_size: {cls.img_size}\")\r\n\r\ndef dprint(*args, **kwargs):\r\n    \"\"\"\r\n    debug print，在 ConfigProvider.debug_print 启用时 打印信息\r\n    \"\"\"\r\n    if ConfigProvider.debug_print:\r\n        print(\"[debug] \", end=\"\")\r\n        print(*args, **kwargs)
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/config_provider.py b/config_provider.py
+--- a/config_provider.py	(revision 619c155531bf6e9478963ba841e94338b57bc30d)
++++ b/config_provider.py	(date 1744532956874)
+@@ -5,7 +5,7 @@
+     cuda = 'cuda:0'
+ 
+ class ConfigProvider:
+-    device = Device.cuda.value
++    device = Device.cpu.value
+     track_time: bool = False
+     debug_print: bool = False
+ 
+Index: my_env/rewards/reward_relationship_space_to_space.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import utils\r\nfrom my_env.space import *\r\nimport my_env.curves as crv\r\nimport my_env\r\n\r\nfrom my_env.my_functions.circle_to_circle_edge_distance import circle_to_circle_edge_distance\r\n\r\n\"\"\"\r\n\r\n    0: Square\r\n    1: Restaurant\r\n    2: Store\r\n    3: Restroom\r\n    4: Hotel\r\n\r\n\"\"\"\r\n\r\n# 吸引为负值，排斥为正值\r\nrelationship_matrix: torch.Tensor = torch.tensor([\r\n    # 广场    餐厅    商店   卫生间   酒店\r\n    [ 0.30, -0.30, -0.30, -0.10,  0.50], # 广场\r\n    [-0.30,  0.00,  0.00, -0.50,  0.30], # 餐厅\r\n    [-0.30,  0.00,  0.00,  0.00,  0.70], # 商店\r\n    [-0.10, -0.50,  0.00,  0.50,  0.00], # 卫生间\r\n    [ 0.50,  0.30,  0.70,  0.00,  0.30], # 酒店\r\n], device=ConfigProvider.device)\r\n\r\n\r\n@utils.count_runtime(track=ConfigProvider.track_time)\r\ndef crv_tanh(x: torch.Tensor, p:torch.Tensor) -> torch.Tensor:\r\n    return p * torch.tanh(5*(x-0.5))\r\n\r\n@utils.count_runtime(track=ConfigProvider.track_time)\r\ndef crv_cos(x: torch.Tensor, p:torch.Tensor) -> torch.Tensor:\r\n    return p * -torch.cos(torch.pi*x)\r\n\r\n\r\n\r\n@utils.count_runtime(track=ConfigProvider.track_time or False)\r\ndef reward_relationship_space_to_space(env: \"my_env.layout_env.LayoutEnv\", action: torch.tensor) -> torch.Tensor:\r\n\r\n    current_step:int = env.step_index\r\n    current_space_type_index:int = int(env.spaces[current_step, 0].item())\r\n\r\n    previous_spaces: torch.Tensor = env.spaces[:current_step, :]\r\n    previous_types = previous_spaces[:, 0].int()\r\n\r\n    # reward_matrix = torch.zeros((previous_spaces.shape[0],), dtype=torch.float32)\r\n    relation_param = relationship_matrix[current_space_type_index, previous_types]\r\n    distances = circle_to_circle_edge_distance(action, previous_spaces[:, 1:]).abs()\r\n\r\n    reward_vector = crv.crv_relationship(distances, relation_param, 0.2, 0.25)\r\n\r\n    return reward_vector.sum()\r\n\r\n\r\n\r\nif __name__ == \"__main__\":\r\n    pass
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/my_env/rewards/reward_relationship_space_to_space.py b/my_env/rewards/reward_relationship_space_to_space.py
+--- a/my_env/rewards/reward_relationship_space_to_space.py	(revision 619c155531bf6e9478963ba841e94338b57bc30d)
++++ b/my_env/rewards/reward_relationship_space_to_space.py	(date 1744532896157)
+@@ -2,7 +2,7 @@
+ from my_env.space import *
+ import my_env.curves as crv
+ import my_env
+-
++from config_provider import ConfigProvider
+ from my_env.my_functions.circle_to_circle_edge_distance import circle_to_circle_edge_distance
+ 
+ """
+@@ -18,7 +18,7 @@
+ # 吸引为负值，排斥为正值
+ relationship_matrix: torch.Tensor = torch.tensor([
+     # 广场    餐厅    商店   卫生间   酒店
+-    [ 0.30, -0.30, -0.30, -0.10,  0.50], # 广场
++    [ 0.70, -0.30, -0.30, -0.10,  0.50], # 广场
+     [-0.30,  0.00,  0.00, -0.50,  0.30], # 餐厅
+     [-0.30,  0.00,  0.00,  0.00,  0.70], # 商店
+     [-0.10, -0.50,  0.00,  0.50,  0.00], # 卫生间
+@@ -42,14 +42,25 @@
+     current_step:int = env.step_index
+     current_space_type_index:int = int(env.spaces[current_step, 0].item())
+ 
+-    previous_spaces: torch.Tensor = env.spaces[:current_step, :]
+-    previous_types = previous_spaces[:, 0].int()
++    previous_spaces: torch.Tensor = env.spaces[:current_step, :] # (current_step, 4)
++    previous_types = previous_spaces[:, 0].int() # (current_step, 1)
+ 
+     # reward_matrix = torch.zeros((previous_spaces.shape[0],), dtype=torch.float32)
+-    relation_param = relationship_matrix[current_space_type_index, previous_types]
+-    distances = circle_to_circle_edge_distance(action, previous_spaces[:, 1:]).abs()
++    # relation_param = relationship_matrix[current_space_type_index, previous_types]
++    distances = circle_to_circle_edge_distance(action, previous_spaces[:, 1:])
++
++    previous_types = previous_types.unsqueeze(1)
++    distances = distances.unsqueeze(1)
++    distances_new = torch.cat(( previous_types,distances), dim=1)
+ 
+-    reward_vector = crv.crv_relationship(distances, relation_param, 0.2, 0.25)
++    distances_min = torch.zeros(5, 1, device=ConfigProvider.device)
++    for i in range(5):
++        mask = distances_new[:, 0] == i
++        distances_filter = distances_new[mask,1]
++        distances_min[i, 0] = torch.min(distances_filter)
++
++    relation_param = relationship_matrix[current_space_type_index, :]
++    reward_vector = crv.crv_relationship(distances_min, relation_param, 0.2, 0.25)
+ 
+     return reward_vector.sum()
+ 

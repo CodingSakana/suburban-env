@@ -1,41 +1,29 @@
-
 import torch
 import utils
-import random
-import numpy as np
 
 import my_env
-import my_env.curves as crvs
-from my_env.curves import show_curve
+import my_env.curves as crv
+from config_provider import ConfigProvider, dprint
 
 from my_env.my_functions.circle_edge_to_road_distance import circle_edge_to_road_distance
 
 
-@utils.count_runtime
-def constraint_square_to_road(self: "my_env.layout_env.LayoutEnv", action) -> torch.Tensor:
 
-    px = action[0]
-    py = action[1]
-    r = action[2]
+@utils.count_runtime(track=ConfigProvider.track_time)
+def constraint_square_to_road(env: "my_env.layout_env.LayoutEnv", action) -> torch.Tensor:
 
-    ax = self.road_slices[0]
-    ay = self.road_slices[1]
-    bx = self.road_slices[2]
-    by = self.road_slices[3]
-
-    edge_distance_to_road = circle_edge_to_road_distance(px, py, r, ax, ay, bx, by)
+    edge_distance_to_road = env.current_to_road_min_distance
 
 
-    return crvs.crvDebug(
-        "广场边界到道路的约束",
-        crvs.index_sweetZone(-0.02, 0.02, 100, 100),
-        edge_distance_to_road
-    )
+    # result = crv.crv_edge_to_road_plus(edge_distance_to_road)
+
+    result = torch.where(-0.03 < edge_distance_to_road < 0.02, 0, 1)
+
+    dprint(f"广场到路的约束 {edge_distance_to_road:.2f} 映射到 {result:.2f}")
+    return result
 
 
 
 if __name__ == '__main__':
-    show_curve(
-        crvs.index_sweetZone(-0.02, 0.02, 100, 100),
-        -0.1, 0.1
-    )
+
+    pass

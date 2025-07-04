@@ -67,10 +67,10 @@ class VCritic(Critic):
 
         for idx in range(self._num_critics):
 
-            self._obs_dim = omnisafe.Extractor.obs_dim
+            self._obs_dim = omnisafe.PolicyProvider.obs_dim
 
             net = nn.Sequential(
-                omnisafe.Extractor.factory_state_preprocessor(obs_space),
+                omnisafe.PolicyProvider.factory_state_preprocessor(obs_space),
                 build_mlp_network(
                     sizes=[self._obs_dim, *self._hidden_sizes, 1],
                     activation=self._activation,

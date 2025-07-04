@@ -4,11 +4,9 @@ from __future__ import annotations
 
 # import pandas
 import torch
-import random
 import numpy as np
 
-from gymnasium.spaces import Box, Discrete
-from sympy.physics.units import volume
+from gymnasium.spaces import Box
 
 import omnisafe
 from omnisafe.envs.core import CMDP, env_register
@@ -16,7 +14,7 @@ from typing import Any
 
 from my_env.layout_env import LayoutEnv
 from omnisafe.typing import OmnisafeSpace
-from utils.time_embedding import embedding_time_with_image
+from config_provider import dprint, ConfigProvider
 
 
 @env_register
@@ -41,14 +39,16 @@ class MyCMDP(CMDP):
     def __init__(self, env_id: str, **kwargs: Any) -> None:
         super().__init__(env_id, **kwargs)
 
-        # 默认size为128
-        self.size = kwargs['size'] if 'size' in kwargs else 128
+        # 默认size?
+        self.size = kwargs['size'] if 'size' in kwargs else ConfigProvider.img_size
 
-        omnisafe.Extractor.set_img_size(self.size)
+        omnisafe.PolicyProvider.set_img_size(self.size)
 
         self.layout_env = LayoutEnv(
             size=self.size,
         )
+
+        self._action_space = Box(0, 1, (3,), dtype=np.float32)
 
     def step(self, action: torch.Tensor) -> tuple[
         torch.Tensor,
@@ -67,21 +67,24 @@ class MyCMDP(CMDP):
         # self.layout_env = LayoutEnv(roads=self.roads)
         # return self.layout_env.get_obs(), {}
         obs = self.layout_env.reset()
-        print("MyCMDP reset")
+        dprint("MyCMDP reset")
         return obs, {} # todo info没写
 
     def set_seed(self, seed: int) -> None:
         pass
 
     def render(self) -> Any:
-        self.layout_env.show_plot()
+        # self.layout_env.show_plot()
+        self.layout_env.show_plot(
+            image=self.layout_env.get_high_resolution_image(256)
+        )
 
     def close(self) -> None:
         return
 
-    @property
-    def action_space(self) -> OmnisafeSpace:
-        return Box(0, 1, (3,), dtype=np.float32)
+    # @property
+    # def action_space(self) -> OmnisafeSpace:
+    #     return Box(0, 1, (3,), dtype=np.float32)
 
     @property
     def observation_space(self) -> OmnisafeSpace:

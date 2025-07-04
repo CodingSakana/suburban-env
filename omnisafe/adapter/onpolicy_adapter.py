@@ -27,6 +27,7 @@ from omnisafe.common.logger import Logger
 from omnisafe.models.actor_critic.constraint_actor_critic import ConstraintActorCritic
 from omnisafe.utils.config import Config
 
+from config_provider import dprint
 
 class OnPolicyAdapter(OnlineAdapter):
     """OnPolicy Adapter for OmniSafe.
@@ -83,6 +84,7 @@ class OnPolicyAdapter(OnlineAdapter):
             description=f'Processing rollout for epoch: {logger.current_epoch}...',
         ):
             act, value_r, value_c, logp = agent.step(obs)
+            dprint("agent row action: ", act)
             next_obs, reward, cost, terminated, truncated, info = self.step(act)
 
             self._log_value(reward=reward, cost=cost, info=info)

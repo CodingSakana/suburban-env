@@ -26,4 +26,4 @@ from omnisafe.algorithms.algo_wrapper import AlgoWrapper as Agent
 from omnisafe.evaluator import Evaluator
 from omnisafe.version import __version__
 
-from omnisafe.my_utils.my_policy import Extractor
+from omnisafe.policy_network.my_policy import PolicyProvider

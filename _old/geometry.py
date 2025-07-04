@@ -38,7 +38,7 @@ class Quadrilateral(Geometry):
             p1 = self.points[i]
             p2 = self.points[(i+1) % 4]
             rt.append(
-                (p1.x, p1.y, p2.x, p2.y)
+                (p1.temp, p1.y, p2.temp, p2.y)
             )
         print(rt)
         return rt

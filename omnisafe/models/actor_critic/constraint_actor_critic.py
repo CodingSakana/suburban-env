@@ -25,6 +25,7 @@ from omnisafe.models.critic.critic_builder import CriticBuilder
 from omnisafe.typing import OmnisafeSpace
 from omnisafe.utils.config import ModelConfig
 
+from config_provider import dprint
 
 class ConstraintActorCritic(ActorCritic):
     """ConstraintActorCritic is a wrapper around ActorCritic that adds a cost critic to the model.
@@ -104,6 +105,7 @@ class ConstraintActorCritic(ActorCritic):
             value_c = self.cost_critic(obs)
 
             action = self.actor.predict(obs, deterministic=deterministic)
+            dprint("ConstraintActor: ", action)
             log_prob = self.actor.log_prob(action)
 
         return action, value_r[0], value_c[0], log_prob

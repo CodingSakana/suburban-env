@@ -99,4 +99,5 @@ class PPOLag(PPO):
             The advantage function combined with reward and cost.
         """
         penalty = self._lagrange.lagrangian_multiplier.item()
+        # print(f"penalty: {penalty}")
         return (adv_r - penalty * adv_c) / (1 + penalty)

@@ -25,6 +25,7 @@ from gymnasium import spaces
 from omnisafe.common import Normalizer
 from omnisafe.envs.core import CMDP, Wrapper
 
+from config_provider import dprint
 
 class TimeLimit(Wrapper):
     """Time limit wrapper for the environment.
@@ -229,15 +230,15 @@ class ObsNormalize(Wrapper):
             info: Some information logged by the environment.
         """
         obs, reward, cost, terminated, truncated, info = super().step(action)
-        # if 'final_observation' in info:
-        #     final_obs_slice = info['_final_observation'] if self.num_envs > 1 else slice(None)
-        #     info['final_observation'] = info['final_observation'].to(self._device)
-        #     info['original_final_observation'] = info['final_observation']
-        #     info['final_observation'][final_obs_slice] = self._obs_normalizer.normalize(
-        #         info['final_observation'][final_obs_slice],
-        #     )
-        # info['original_obs'] = obs
-        # obs = self._obs_normalizer.normalize(obs)
+        if 'final_observation' in info:
+            final_obs_slice = info['_final_observation'] if self.num_envs > 1 else slice(None)
+            info['final_observation'] = info['final_observation'].to(self._device)
+            info['original_final_observation'] = info['final_observation']
+            info['final_observation'][final_obs_slice] = self._obs_normalizer.normalize(
+                info['final_observation'][final_obs_slice],
+            )
+        info['original_obs'] = obs
+        obs = self._obs_normalizer.normalize(obs)
         return obs, reward, cost, terminated, truncated, info
 
     def reset(
@@ -507,9 +508,12 @@ class ActionScale(Wrapper):
             truncated: Whether the episode has been truncated due to a time limit.
             info: Some information logged by the environment.
         """
+        dprint("action scale received: ", action)
+        action = torch.clip(action, self._min_action, self._max_action)
         action = self._old_min_action + (self._old_max_action - self._old_min_action) * (
             action - self._min_action
         ) / (self._max_action - self._min_action)
+        dprint("action scale mapped: ", action)
 
         return super().step(action)
 
