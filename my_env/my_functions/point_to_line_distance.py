@@ -19,8 +19,8 @@ def distance_point_to_line_segment(px, py, ax, ay, bx, by):
     # if length_squared == 0:
     #     return math.sqrt(dx2 ** 2 + dy2 ** 2)
 
-    # 投影标量t
-    t = torch.max(torch.tensor(0), torch.min(torch.tensor(1), (dx2 * dx1 + dy2 * dy1) / length_squared))
+    # 投影标量 t ∈ [0, 1]
+    t = ((dx2 * dx1 + dy2 * dy1) / length_squared).clamp(0, 1)
 
     # t (k,n)
 

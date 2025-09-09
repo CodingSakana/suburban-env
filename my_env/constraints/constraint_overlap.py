@@ -1,4 +1,5 @@
 import utils
+import torch
 from my_env.space import *
 import my_env.curves as crv
 from my_env.my_functions.circle_to_circle_edge_distance import circle_to_circle_edge_distance
@@ -29,7 +30,11 @@ def constraint_overlap(env: "my_env.layout_env.LayoutEnv", current_circle) -> to
     non_square_penalties = crv.crv_overlap(non_square_distances, 0.01, 0.02)
     total_overlap += torch.sum(non_square_penalties)
 
-    dprint(f"空间重叠约束 {total_overlap:.2f}")
+    try:
+        val = total_overlap.item() if torch.is_tensor(total_overlap) else total_overlap
+        dprint(f"空间重叠约束 {val:.2f}")
+    except Exception:
+        dprint(f"空间重叠约束 {total_overlap}")
     return total_overlap
 
 

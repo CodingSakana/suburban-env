@@ -39,12 +39,13 @@ def generate(key: str='road_real'):
 
     return roads[key]
 
+# 把路转化为线段的形式
 def __util_road_to_roadSlice(roads:List) -> List:
     road_slices = []
     for road in roads:
-        for pi in range(len(road) - 1):
+        for i in range(len(road) - 1):
             road_slices.append(
-                [road[pi][0], road[pi][1], road[pi + 1][0], road[pi + 1][1]]
+                [road[i][0], road[i][1], road[i + 1][0], road[i + 1][1]]
             )
 
     return road_slices

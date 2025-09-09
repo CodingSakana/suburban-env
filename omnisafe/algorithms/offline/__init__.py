@@ -12,14 +12,32 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Offline algorithms."""
+"""Offline algorithms.
 
-from omnisafe.algorithms.offline.bcq import BCQ
-from omnisafe.algorithms.offline.bcq_lag import BCQLag
-from omnisafe.algorithms.offline.c_crr import CCRR
-from omnisafe.algorithms.offline.coptidice import COptiDICE
-from omnisafe.algorithms.offline.crr import CRR
-from omnisafe.algorithms.offline.vae_bc import VAEBC
+Some offline algorithms require optional packages (e.g., gdown for dataset
+downloads). Import them lazily so users not using offline RL won't be forced
+to install extra dependencies.
+"""
 
+from contextlib import suppress
 
-__all__ = ['BCQ', 'BCQLag', 'CCRR', 'CRR', 'COptiDICE', 'VAEBC']
+__all__ = []
+
+with suppress(Exception):
+    from omnisafe.algorithms.offline.bcq import BCQ  # type: ignore
+    __all__.append('BCQ')
+with suppress(Exception):
+    from omnisafe.algorithms.offline.bcq_lag import BCQLag  # type: ignore
+    __all__.append('BCQLag')
+with suppress(Exception):
+    from omnisafe.algorithms.offline.c_crr import CCRR  # type: ignore
+    __all__.append('CCRR')
+with suppress(Exception):
+    from omnisafe.algorithms.offline.coptidice import COptiDICE  # type: ignore
+    __all__.append('COptiDICE')
+with suppress(Exception):
+    from omnisafe.algorithms.offline.crr import CRR  # type: ignore
+    __all__.append('CRR')
+with suppress(Exception):
+    from omnisafe.algorithms.offline.vae_bc import VAEBC  # type: ignore
+    __all__.append('VAEBC')

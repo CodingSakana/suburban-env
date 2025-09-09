@@ -16,7 +16,8 @@ def reward_weighting(layoutEnv: "my_env.layout_env.LayoutEnv", action) -> torch.
     # 本次被放置的空间类型
     space_type = layoutEnv.spaces[layoutEnv.step_index][0]
 
-    reward = torch.tensor(0, device=ConfigProvider.device)
+    # accumulate as float to keep dtype consistent
+    reward = torch.tensor(0.0, device=ConfigProvider.device, dtype=torch.float32)
 
     # TODO 权重未设置
 
@@ -38,11 +39,12 @@ def reward_weighting(layoutEnv: "my_env.layout_env.LayoutEnv", action) -> torch.
     if layoutEnv.step_index == layoutEnv.max_step:
         reward = reward + 0.5 * reward_general_planning(layoutEnv, action)
 
-    return reward
+    return reward.to(torch.float32)
 
 
 
 def reward_area(action:torch.Tensor) -> torch.Tensor:
     return torch.max(
-        torch.tensor(0, device=ConfigProvider.device), (action[2] - 0.5).abs()
+        torch.tensor(0.0, device=ConfigProvider.device, dtype=torch.float32),
+        (action[2] - 0.5).abs().to(torch.float32),
     )

@@ -39,6 +39,8 @@ d2_matrix: torch.Tensor = torch.tensor([
 
 @utils.count_runtime(track=ConfigProvider.track_time)
 def reward_road_distance_relationship(env: "my_env.layout_env.LayoutEnv", action):
+    # 占位：未启用此奖励，避免访问未定义属性
+    return torch.tensor(0, device=ConfigProvider.device)
 
     current = env.space_param[env.step_index]
     previous = env.space_param[:env.step_index]

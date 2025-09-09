@@ -16,7 +16,8 @@ import utils
 @utils.count_runtime(track=ConfigProvider.track_time)
 def cost_weighting(layoutEnv: "my_env.layout_env.LayoutEnv", action) -> torch.Tensor:
 
-    cost = torch.tensor(0, device=ConfigProvider.device)
+    # accumulate as float to keep dtype consistent
+    cost = torch.tensor(0.0, device=ConfigProvider.device, dtype=torch.float32)
 
     # 本次被放置的空间类型
     space_type = layoutEnv.lay_type(layoutEnv.step_index)
@@ -31,4 +32,4 @@ def cost_weighting(layoutEnv: "my_env.layout_env.LayoutEnv", action) -> torch.Te
     cost = cost + 1 * constraint_boundary(layoutEnv, action)
     cost = cost + 1 * constraint_overlap(layoutEnv, action)
 
-    return cost
+    return cost.to(torch.float32)

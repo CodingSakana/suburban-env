@@ -26,7 +26,12 @@ def constraint_boundary(env: "my_env.layout_env.LayoutEnv", action) -> torch.Ten
 
     result = crv.crv_boundary(distance_min, r, margin)
 
-    dprint(f"空间到边界 {distance_min:.2f} 映射到 {result:.2f}")
+    try:
+        dmin_val = distance_min.item() if torch.is_tensor(distance_min) else distance_min
+        res_val = result.item() if torch.is_tensor(result) else result
+        dprint(f"空间到边界 {dmin_val:.2f} 映射到 {res_val:.2f}")
+    except Exception:
+        dprint(f"空间到边界 {distance_min} 映射到 {result}")
     return result
 
 

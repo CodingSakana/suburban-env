@@ -7,19 +7,13 @@ import utils
 from config_provider import ConfigProvider, dprint
 from collections import deque
 
-
 def build_adjacency_matrix(road_slices):
 
     def adjacency_core(slice_i, slice_j):
-        if slice_i[:2] == slice_j[:2]:
-            return True
-        elif slice_i[2:] == slice_j[:2]:
-            return True
-        elif slice_i[2:] == slice_j[2:]:
-            return True
-        elif slice_i[2:] == slice_j[:2]:
-            return True
-        return False
+        # Adjacent if any endpoints coincide
+        a1, b1 = slice_i[:2], slice_i[2:]
+        a2, b2 = slice_j[:2], slice_j[2:]
+        return (a1 == a2) or (a1 == b2) or (b1 == a2) or (b1 == b2)
 
     adjacency_matrix = torch.zeros(len(road_slices), len(road_slices), device=ConfigProvider.device)
     for i in range(len(road_slices)):
@@ -56,7 +50,10 @@ def build_road_parameters(road_slices):
     for i in range(len(road_slices)):
         for j in range(i, len(road_slices)):
             paths = bfs_shortest_path(adjacency_matrix, i, j)
-            distance = sum([slice_lengths[i] for i in paths])
+            if paths is None:
+                distance = float("inf")
+            else:
+                distance = sum([slice_lengths[idx] for idx in paths])
             distance_matrix[i][j] = distance
 
             # 组装 param_matrix
@@ -86,12 +83,16 @@ def calcu_p2p_road_distance(begin_index:torch.Tensor, end_index:torch.Tensor, be
     distance_matrix = road_param['distance_matrix']
     param_matrix = road_param['param_matrix']
 
-    distance: torch.Tensor = distance_matrix[begin_index, end_index]#.unsqueeze(0)
+    distance: torch.Tensor = distance_matrix[begin_index, end_index]
 
     def calcu_alpha(a, flag):
         return a*flag + (1-a)*(1-flag)
 
-    inplace_param = torch.where(end_index==begin_index, 0, 1)
+    inplace_param = torch.where(
+        end_index == begin_index,
+        torch.tensor(0, device=ConfigProvider.device, dtype=distance.dtype),
+        torch.tensor(1, device=ConfigProvider.device, dtype=distance.dtype),
+    )
 
     # 千万别写 distance -= something, 被坑惨了
     distance = distance - slice_lengths[begin_index] * calcu_alpha(begin_t, param_matrix[begin_index, end_index])
@@ -120,8 +121,8 @@ def build_point_param(point, road_slices_tensor):
     dx2, dy2 = px.view(1, -1) - ax.view(-1, 1), py.view(1, -1) - ay.view(-1, 1)
     length_squared = dx1 ** 2 + dy1 ** 2
 
-    # 投影标量t
-    t = torch.max(torch.tensor(0), torch.min(torch.tensor(1), (dx2 * dx1 + dy2 * dy1) / length_squared))
+    # 投影标量 t ∈ [0, 1]
+    t = ((dx2 * dx1 + dy2 * dy1) / length_squared).clamp(0, 1)
 
     # 投影坐标
     projx = ax.reshape(-1, 1) + t * dx1
@@ -130,7 +131,7 @@ def build_point_param(point, road_slices_tensor):
     # P到投影点距离
     d = torch.sqrt((px.reshape(1, -1) - projx) ** 2 + (py.reshape(1, -1) - projy) ** 2)  # (k,n)
 
-    min_index = torch.argmin(d)
+    min_index = torch.argmin(d).to(torch.int64)
     d_min = d[min_index]
     t_min = t[min_index]
 
@@ -152,7 +153,8 @@ def bfs_shortest_path(adj_matrix, start, end):
             return path  # 找到最短路径
 
         for i in range(n):
-            if adj_matrix[current][i] == 1 and not visited[i]:
+            val = adj_matrix[current, i] if hasattr(adj_matrix, 'shape') else adj_matrix[current][i]
+            if (float(val) == 1.0) and (not visited[i]):
                 queue.append((i, path + [i]))
                 visited[i] = True
 

@@ -22,6 +22,7 @@ from typing import Any
 import torch
 import torch.nn as nn
 from rich.progress import track
+from torch.distributions import Normal, kl_divergence
 from torch.nn.utils.clip_grad import clip_grad_norm_
 from torch.utils.data import DataLoader, TensorDataset
 
@@ -356,8 +357,16 @@ class PolicyGradient(BaseAlgo):
         )
 
         original_obs = obs
-        old_distribution = self._actor_critic.actor(obs)
-        print("old distribution built.")
+        # Build old distribution in micro-batches without autograd to avoid OOM
+        with torch.no_grad():
+            old_std = torch.exp(self._actor_critic.actor.log_std.detach())
+            mb = min(512, original_obs.shape[0])
+            old_means = []
+            for i in range(0, original_obs.shape[0], mb):
+                mean_chunk = self._actor_critic.actor.mean(original_obs[i : i + mb])
+                old_means.append(mean_chunk.cpu())
+            old_means = torch.cat(old_means, dim=0)
+        print("old distribution built (micro-batch, no_grad).")
         dataloader = DataLoader(
             dataset=TensorDataset(obs, act, logp, target_value_r, target_value_c, adv_r, adv_c),
             batch_size=self._cfgs.algo_cfgs.batch_size,
@@ -390,14 +399,23 @@ class PolicyGradient(BaseAlgo):
             gc.collect()
             torch.cuda.empty_cache()
 
-            new_distribution = self._actor_critic.actor(original_obs)
-
-            kl = (
-                torch.distributions.kl.kl_divergence(old_distribution, new_distribution)
-                .sum(-1, keepdim=True)
-                .mean()
-            )
-            kl = distributed.dist_avg(kl)
+            # Compute KL in micro-batches to reduce peak memory
+            with torch.no_grad():
+                mb = min(512, original_obs.shape[0])
+                kl_sum = 0.0
+                count = 0
+                new_std = torch.exp(self._actor_critic.actor.log_std)
+                for i in range(0, original_obs.shape[0], mb):
+                    o = original_obs[i : i + mb]
+                    new_mean = self._actor_critic.actor.mean(o)
+                    old_mean = old_means[i : i + mb].to(new_mean.device)
+                    dist_old = Normal(old_mean, old_std)
+                    dist_new = Normal(new_mean, new_std)
+                    kl_chunk = kl_divergence(dist_old, dist_new).sum(-1)
+                    kl_sum += kl_chunk.sum().item()
+                    count += kl_chunk.numel()
+                kl_value = torch.tensor(kl_sum / max(count, 1), device=new_std.device)
+            kl = distributed.dist_avg(kl_value)
 
             final_kl = kl.item()
             update_counts += 1

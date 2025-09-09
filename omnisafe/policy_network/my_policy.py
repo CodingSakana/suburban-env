@@ -56,6 +56,7 @@ class Policy(torch.nn.Module):
 
         self.time_embedding = TimeEmbedding(30, self.img_size, 64)
 
+        # Convolutions (no downsampling; preserve original behavior)
         self.conv2d_1 = nn.Conv2d(3, 64, 3, stride=1, padding=1)
         self.conv2d_2 = nn.Conv2d(64, 128, 3, stride=1, padding=1)
 
@@ -81,7 +82,7 @@ class Policy(torch.nn.Module):
         time_index = x[:, -1].to(dtype=torch.int32)
 
         image = image.view(n, self.img_size, self.img_size, 3)
-        image = image.permute(0, 3, 1, 2) # 把channels移到第一个
+        image = image.permute(0, 3, 1, 2).contiguous() # 把channels移到第一个
 
         step_value = self.time_embedding(time_index)
 

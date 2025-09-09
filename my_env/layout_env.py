@@ -1,3 +1,5 @@
+# 环境核心
+
 from __future__ import annotations
 
 
@@ -219,7 +221,8 @@ class LayoutEnv:
         assert action.shape == (3,), "Action shape is not (3)."
         assert self.step_index < self.step_sum, "invalid time_step"
 
-        truncated = torch.tensor([0], device=ConfigProvider.device)
+        # Use scalar boolean for truncated to avoid extra dims after wrappers
+        truncated = torch.tensor(False, device=ConfigProvider.device)
         info = {'time_step': self.step_index}
 
         type_to_lay = self.lay_type(self.step_index)
@@ -236,7 +239,7 @@ class LayoutEnv:
 
         # 提前计算一个 distance 然后共享给 reward 和 cost
         index_min, t_min, d_min, index, t, d = map_manager.build_point_param(remapped_action, self.road_slices)
-        self.current_to_road_min_distance = (d_min - remapped_action[2])[0]
+        self.current_to_road_min_distance = d_min - remapped_action[2]
         self.space_param_min[self.step_index] = torch.tensor([index_min, t_min, d_min, self.current_to_road_min_distance], device=ConfigProvider.device)
         all_param = torch.stack([
             index, t, d, d - remapped_action[2]

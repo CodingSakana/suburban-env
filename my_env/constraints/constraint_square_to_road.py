@@ -17,9 +17,21 @@ def constraint_square_to_road(env: "my_env.layout_env.LayoutEnv", action) -> tor
 
     # result = crv.crv_edge_to_road_plus(edge_distance_to_road)
 
-    result = torch.where(-0.03 < edge_distance_to_road < 0.02, 0, 1)
+    cond = (edge_distance_to_road > torch.tensor(-0.03, device=ConfigProvider.device)) & (
+        edge_distance_to_road < torch.tensor(0.02, device=ConfigProvider.device)
+    )
+    result = torch.where(
+        cond,
+        torch.tensor(0.0, device=ConfigProvider.device, dtype=torch.float32),
+        torch.tensor(1.0, device=ConfigProvider.device, dtype=torch.float32),
+    )
 
-    dprint(f"广场到路的约束 {edge_distance_to_road:.2f} 映射到 {result:.2f}")
+    try:
+        ed_val = edge_distance_to_road.item() if torch.is_tensor(edge_distance_to_road) else edge_distance_to_road
+        res_val = result.item() if torch.is_tensor(result) else result
+        dprint(f"广场到路的约束 {ed_val:.2f} 映射到 {res_val:.2f}")
+    except Exception:
+        dprint(f"广场到路的约束 {edge_distance_to_road} 映射到 {result}")
     return result
 
 

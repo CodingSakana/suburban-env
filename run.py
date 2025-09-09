@@ -51,7 +51,16 @@ if __name__ == '__main__':
         k, v = arg.split("=", 1)
         args[k] = v
 
-    ConfigProvider.device = args["device"]
+    # Resolve desired device; fallback to CPU if CUDA not available
+    desired_device = args["device"]
+    if desired_device.startswith("cuda") and not torch.cuda.is_available():
+        print("[warn] CUDA not available; falling back to CPU for training.")
+        desired_device = "cpu"
+    # Normalize bare 'cuda' to an explicit index to satisfy torch.cuda.set_device
+    if desired_device == "cuda":
+        desired_device = "cuda:0"
+
+    ConfigProvider.device = desired_device
     ConfigProvider.img_size = int(args["size"])
 
     ConfigProvider.use_count_time = parse_bool(args["use_count_time"])
@@ -78,10 +87,29 @@ if __name__ == '__main__':
 
         import omnisafe
         from my_env import omnisafe_env
-        agent = omnisafe.Agent(
-            'PPOLag',
-            'suburban_layout'
-        )
+        # Ensure OmniSafe also uses the resolved device
+        custom_cfgs = {
+            'train_cfgs': {
+                'device': desired_device,
+            }
+        }
+
+        # Only override algo cfgs if explicitly provided via CLI
+        algo_overrides = {}
+        if 'steps_per_epoch' in args:
+            try:
+                algo_overrides['steps_per_epoch'] = int(args['steps_per_epoch'])
+            except Exception:
+                pass
+        if 'batch_size' in args:
+            try:
+                algo_overrides['batch_size'] = int(args['batch_size'])
+            except Exception:
+                pass
+        if algo_overrides:
+            custom_cfgs['algo_cfgs'] = algo_overrides
+
+        agent = omnisafe.Agent('PPOLag', 'suburban_layout', custom_cfgs=custom_cfgs)
         agent.learn()
 
     else:

@@ -12,14 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Environment API for OmniSafe."""
+"""Environment API for OmniSafe.
 
-from omnisafe.envs import classic_control
+This local fork only needs the core registry utilities. Optional env backends
+like MuJoCo/MetaDrive/Isaac may not be installed on target machines; avoid
+importing them eagerly to prevent hard failures when they are unused.
+"""
+
+from contextlib import suppress
+
 from omnisafe.envs.core import CMDP, env_register, make, support_envs
-from omnisafe.envs.crabs_env import CRABSEnv
-from omnisafe.envs.custom_env import CustomEnv
-from omnisafe.envs.meta_drive_env import SafetyMetaDriveEnv
-from omnisafe.envs.mujoco_env import MujocoEnv
-from omnisafe.envs.safety_gymnasium_env import SafetyGymnasiumEnv
-from omnisafe.envs.safety_gymnasium_modelbased import SafetyGymnasiumModelBased
-from omnisafe.envs.safety_isaac_gym_env import SafetyIsaacGymEnv
+
+# Optional environment families (best-effort import; ignore if unavailable)
+with suppress(Exception):
+    from omnisafe.envs import classic_control  # noqa: F401
+with suppress(Exception):
+    from omnisafe.envs.crabs_env import CRABSEnv  # noqa: F401
+with suppress(Exception):
+    from omnisafe.envs.custom_env import CustomEnv  # noqa: F401
+with suppress(Exception):
+    from omnisafe.envs.meta_drive_env import SafetyMetaDriveEnv  # noqa: F401
+with suppress(Exception):
+    from omnisafe.envs.mujoco_env import MujocoEnv  # noqa: F401
+with suppress(Exception):
+    from omnisafe.envs.safety_gymnasium_env import SafetyGymnasiumEnv  # noqa: F401
+with suppress(Exception):
+    from omnisafe.envs.safety_gymnasium_modelbased import SafetyGymnasiumModelBased  # noqa: F401
+with suppress(Exception):
+    from omnisafe.envs.safety_isaac_gym_env import SafetyIsaacGymEnv  # noqa: F401

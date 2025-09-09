@@ -28,10 +28,20 @@ def constraint_space_to_road(env: "my_env.layout_env.LayoutEnv", action: torch.T
     if min_edge_distance_to_square <= edge_distance_to_road:
         # 如果更临近广场 则免cost
         result = crv.crv_space_edge_to_square_edge(min_edge_distance_to_square)
-        dprint(f"实体空间到广场 {min_edge_distance_to_square:.3f} 映射到 {result:.3f}")
+        try:
+            v1 = min_edge_distance_to_square.item() if torch.is_tensor(min_edge_distance_to_square) else min_edge_distance_to_square
+            v2 = result.item() if torch.is_tensor(result) else result
+            dprint(f"实体空间到广场 {v1:.3f} 映射到 {v2:.3f}")
+        except Exception:
+            dprint(f"实体空间到广场 {min_edge_distance_to_square} 映射到 {result}")
     else:
         result = crv.crv_edge_to_road_plus(edge_distance_to_road)
-        dprint(f"实体空间到道路 {edge_distance_to_road:.3f} 映射到 {result:.3f}")
+        try:
+            v1 = edge_distance_to_road.item() if torch.is_tensor(edge_distance_to_road) else edge_distance_to_road
+            v2 = result.item() if torch.is_tensor(result) else result
+            dprint(f"实体空间到道路 {v1:.3f} 映射到 {v2:.3f}")
+        except Exception:
+            dprint(f"实体空间到道路 {edge_distance_to_road} 映射到 {result}")
 
 
     return result

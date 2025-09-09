@@ -14,8 +14,9 @@ class DataModel(object):
 
     def __init__(self):
         self.layout_env = LayoutEnv()
-        self.total_reward = torch.tensor(.0)
-        self.total_cost = torch.tensor(.0)
+        # Accumulators kept as 0-dim float tensors on configured device
+        self.total_reward = torch.tensor(0.0, device=ConfigProvider.device)
+        self.total_cost = torch.tensor(0.0, device=ConfigProvider.device)
 
         self.history_stack: List[torch.Tensor] = []
 
@@ -175,7 +176,12 @@ class DataModel(object):
 
 
     def get_total_state(self):
-        return f"{self.layout_env.step_index}/{self.layout_env.step_sum}_{self.total_reward:.2f}_{self.total_cost:.2f}"
+        try:
+            tr = self.total_reward.item() if torch.is_tensor(self.total_reward) else self.total_reward
+            tc = self.total_cost.item() if torch.is_tensor(self.total_cost) else self.total_cost
+            return f"{self.layout_env.step_index}/{self.layout_env.step_sum}_{tr:.2f}_{tc:.2f}"
+        except Exception:
+            return f"{self.layout_env.step_index}/{self.layout_env.step_sum}_{self.total_reward}_{self.total_cost}"
 
     def get_current_radius_min_max(self):
         space_type: Space = self.layout_env.lay_type(
@@ -204,11 +210,23 @@ class DataModel(object):
 
     def util_reset(self):
         self.layout_env.reset()
-        self.total_reward = torch.tensor(.0)
-        self.total_cost = torch.tensor(.0)
+        self.total_reward = torch.tensor(0.0, device=ConfigProvider.device)
+        self.total_cost = torch.tensor(0.0, device=ConfigProvider.device)
 
     def util_step(self, action):
         _, reward, cost, terminated, truncated, info = self.layout_env.step(action)
-        self.total_reward += reward
-        self.total_cost += cost
+
+        # Ensure reward/cost are 0-dim tensors to avoid in-place broadcast errors
+        if torch.is_tensor(reward):
+            reward = reward.reshape(()) if reward.numel() == 1 else reward
+        else:
+            reward = torch.tensor(float(reward), device=ConfigProvider.device)
+
+        if torch.is_tensor(cost):
+            cost = cost.reshape(()) if cost.numel() == 1 else cost
+        else:
+            cost = torch.tensor(float(cost), device=ConfigProvider.device)
+
+        self.total_reward = self.total_reward + reward
+        self.total_cost = self.total_cost + cost
         return reward, cost, terminated, truncated, info

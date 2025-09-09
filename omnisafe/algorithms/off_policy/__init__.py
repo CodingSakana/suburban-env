@@ -12,9 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Off-policy algorithms."""
+"""Off-policy algorithms.
 
-from omnisafe.algorithms.off_policy.crabs import CRABS
+Some algorithms (e.g., CRABS) depend on optional third-party packages
+like `pytorch_lightning` and `safety_gymnasium`. We import those lazily
+so users training unrelated algorithms don't have to install them.
+"""
+
 from omnisafe.algorithms.off_policy.ddpg import DDPG
 from omnisafe.algorithms.off_policy.ddpg_lag import DDPGLag
 from omnisafe.algorithms.off_policy.ddpg_pid import DDPGPID
@@ -25,6 +29,13 @@ from omnisafe.algorithms.off_policy.td3 import TD3
 from omnisafe.algorithms.off_policy.td3_lag import TD3Lag
 from omnisafe.algorithms.off_policy.td3_pid import TD3PID
 
+# Try to import CRABS (optional). If unavailable, skip silently.
+_HAS_CRABS = False
+try:
+    from omnisafe.algorithms.off_policy.crabs import CRABS  # type: ignore
+    _HAS_CRABS = True
+except Exception:
+    _HAS_CRABS = False
 
 __all__ = [
     'DDPG',
@@ -36,5 +47,7 @@ __all__ = [
     'DDPGPID',
     'TD3PID',
     'SACPID',
-    'CRABS',
 ]
+
+if _HAS_CRABS:
+    __all__.append('CRABS')

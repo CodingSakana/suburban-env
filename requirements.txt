@@ -1,0 +1,37 @@
+# NOTE:
+# - We sync with the OmniSafe dependency minima provided, but keep Torch as a
+#   manual install to avoid breaking CUDA setups. Install torch via conda, e.g.:
+#   `conda install pytorch pytorch-cuda=12.1 -c pytorch -c nvidia`
+#   If you must use pip, use PyTorch's CUDA wheels index.
+
+# Core runtime (lower bounds match project.dependencies)
+typing-extensions>=4.0.0
+numpy>=1.20.0
+tensorboard>=2.8.0
+wandb>=0.13.0
+PyYAML>=6.0
+moviepy>=1.0.0
+typer[all]>=0.7.0
+seaborn>=0.12.2
+pandas>=1.5.3
+matplotlib>=3.7.1
+gdown>=4.6.0
+requests>=2.28.0
+
+# Project packages
+gymnasium>=0.28.0
+flask>=2.2.0
+tqdm>=4.64.0
+rich>=13.0.0
+imageio>=2.22.0
+opencv-python-headless>=4.7.0
+pytorch-lightning>=2.0.0
+
+# Optional extras (uncomment as needed)
+# safety-gymnasium>=0.1.0
+# mujoco
+# glfw
+
+# Torch (install separately; see note above)
+# torch>=1.10.0
+tensorboard

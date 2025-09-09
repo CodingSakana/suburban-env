@@ -15,6 +15,7 @@
 """Safe Reinforcement Learning algorithms."""
 
 import itertools
+from contextlib import suppress
 from types import MappingProxyType
 
 from omnisafe.algorithms import model_based, off_policy, offline, on_policy
@@ -25,7 +26,6 @@ from omnisafe.algorithms.model_based import CAPPETS, CCEPETS, LOOP, PETS, RCEPET
 
 # Off-Policy Safe
 from omnisafe.algorithms.off_policy import (
-    CRABS,
     DDPG,
     DDPGPID,
     SAC,
@@ -36,6 +36,9 @@ from omnisafe.algorithms.off_policy import (
     SACLag,
     TD3Lag,
 )
+# Optional CRABS (may require extra dependencies)
+with suppress(Exception):
+    from omnisafe.algorithms.off_policy import CRABS  # noqa: F401
 
 # Offline Safe
 from omnisafe.algorithms.offline import BCQ, CCRR, CRR, VAEBC, BCQLag, COptiDICE
