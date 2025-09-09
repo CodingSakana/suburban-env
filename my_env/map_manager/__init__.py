@@ -2,7 +2,7 @@
 from my_env.map_manager.road_distance import *
 
 
-def road_to_roadSlice(roads):
+def road_to_roadSlice(roads) -> list:
     """
     roads: 形式更方便维护更改 (n1, m, 2) n1条路，m个节点，2个数值代表x,y坐标
     roadSlice: 方便广播计算 (4, n2)  n2个道路线段，4个数值分别代表：第一个点坐标值 ax ay 第二个点坐标值 bx by
